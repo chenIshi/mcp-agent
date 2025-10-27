@@ -1,0 +1,32 @@
+$schema: ../../../schema/mcp-agent.config.schema.json
+
+kubernetes:
+  default_namespace: default
+  default_image_pull_policy: IfNotPresent
+  default_resources:
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+    requests:
+      cpu: "250m"
+      memory: "256Mi"
+  # Example defaults for agents
+  agent_defaults:
+    image: "ghcr.io/sands/mcp-agent:latest"
+    replicas: 1
+    autoscale: false
+    hpa_min_replicas: 1
+    hpa_max_replicas: 3
+
+execution_engine: asyncio
+logger:
+  transports: [console, file]
+  level: debug
+  show_progress: true
+  path_settings:
+    path_pattern: "logs/mcp-agent-{unique_id}.jsonl"
+    unique_id: "timestamp" # Options: "timestamp" or "session_id"
+    timestamp_format: "%Y%m%d_%H%M%S"
+
+google:
+  default_model: gemini-2.0-flash
