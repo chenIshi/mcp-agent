@@ -84,8 +84,8 @@ If you want to run the same example inside a container, use the Dockerfile in th
 Option A — Install `uv` inside the image and keep the current CMD:
 
 ```bash
-docker build -t ghcr.io/sands/mcp-agent:latest --build-arg INSTALL_UV=true .
-docker push ghcr.io/sands/mcp-agent:latest
+docker build -t ghcr.io/[YOUR NAME]/mcp-agent:latest --build-arg INSTALL_UV=true .
+docker push ghcr.io/[YOUR NAME]/mcp-agent:latest
 ```
 
 Option B — Simplify CMD to use Python directly (recommended for most users):

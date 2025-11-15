@@ -13,7 +13,7 @@ async def main():
             name="k8s-demo-agent",
             instruction="You are a helpful assistant running in Kubernetes",
             server_names=["filesystem"],
-            k8s_image="ghcr.io/sands/mcp-agent:latest",  # TODO: build/push image in CI
+            k8s_image="yxchen1996/mcp-agent:latest",  # TODO: build/push image in CI
             k8s_namespace="default",
             k8s_replicas=1,
             k8s_autoscale=False,

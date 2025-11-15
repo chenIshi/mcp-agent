@@ -1,22 +1,20 @@
-# Minimal Dockerfile for packaging your MCP app + mcp-agent
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system deps (add as needed)
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
     build-essential \
   && rm -rf /var/lib/apt/lists/*
 
-# Copy pyproject/requirements if you use them, or install mcp-agent directly
+# Copy requirements and install Python dependencies
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy your application code
-COPY . /app
+# Copy application code and config files
+COPY main.py ./
+COPY mcp_agent.config.yaml ./
 
-# Expose port(s) if needed by your app
-EXPOSE 8000
-
-# Run your app (adjust entrypoint/cmd as required)
-CMD ["uv", "run", "main.py"]
+# Run the example script
+CMD ["python", "main.py"]

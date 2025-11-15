@@ -12,7 +12,7 @@ kubernetes:
       memory: "256Mi"
   # Example defaults for agents
   agent_defaults:
-    image: "ghcr.io/sands/mcp-agent:latest"
+    image: "yxchen1996/mcp-agent:latest"
     replicas: 1
     autoscale: false
     hpa_min_replicas: 1
