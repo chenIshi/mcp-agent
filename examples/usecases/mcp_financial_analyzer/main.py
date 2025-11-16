@@ -10,10 +10,18 @@ import os
 import sys
 from datetime import datetime
 from mcp_agent.app import MCPApp
+from mcp_agent.config import (
+    GoogleSettings,
+    Settings,
+    LoggerSettings,
+    MCPSettings,
+    MCPServerSettings,
+)
 from mcp_agent.agents.agent import Agent
 from mcp_agent.workflows.orchestrator.orchestrator import Orchestrator
 from mcp_agent.workflows.llm.augmented_llm import RequestParams
-from mcp_agent.workflows.llm.augmented_llm_openai import OpenAIAugmentedLLM
+# from mcp_agent.workflows.llm.augmented_llm_openai import OpenAIAugmentedLLM
+from mcp_agent.workflows.llm.augmented_llm_google import GoogleAugmentedLLM
 from mcp_agent.workflows.evaluator_optimizer.evaluator_optimizer import (
     EvaluatorOptimizerLLM,
     QualityRating,
@@ -120,6 +128,7 @@ async def main():
             """,
             server_names=["g-search", "fetch"],
         )
+        # research_agent.attach_llm(GoogleAugmentedLLM)
 
         # Quality control agent that enforces strict data standards
         research_evaluator = Agent(
@@ -188,12 +197,13 @@ async def main():
             """,
             server_names=[],
         )
+        # research_evaluator.attach_llm(GoogleAugmentedLLM)
 
         # Create the research quality control component
         research_quality_controller = EvaluatorOptimizerLLM(
             optimizer=research_agent,
             evaluator=research_evaluator,
-            llm_factory=OpenAIAugmentedLLM,
+            llm_factory=GoogleAugmentedLLM,
             min_rating=QualityRating.GOOD,
         )
 
@@ -251,6 +261,7 @@ async def main():
             """,
             server_names=[],
         )
+        # analyst_agent.attach_llm(GoogleAugmentedLLM)
 
         # Report generation agent that creates institutional-quality documents
         report_writer = Agent(
@@ -374,13 +385,14 @@ async def main():
             """,
             server_names=["filesystem"],
         )
+        # report_writer.attach_llm(GoogleAugmentedLLM)
 
         # --- CREATE THE ORCHESTRATOR ---
         logger.info(f"Initializing stock analysis workflow for {COMPANY_NAME}")
 
         # Configure the orchestrator with our specialized agents
         orchestrator = Orchestrator(
-            llm_factory=OpenAIAugmentedLLM,
+            llm_factory=GoogleAugmentedLLM,
             available_agents=[
                 research_quality_controller,
                 analyst_agent,
@@ -412,7 +424,7 @@ async def main():
         logger.info("Starting the stock analysis workflow")
         try:
             await orchestrator.generate_str(
-                message=task, request_params=RequestParams(model="gpt-4o")
+                message=task, request_params=RequestParams(model="gemini-2.0-flash")
             )
 
             # Verify report generation

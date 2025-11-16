@@ -22,7 +22,8 @@ mcp:
       args: ["-y", "@modelcontextprotocol/server-filesystem"]
 
 # Default OpenAI configuration
-openai:
-  default_model: gpt-4o
+# openai:
+#   default_model: gpt-4o
 
-
+google:
+  default_model: gemini-2.0-flash
