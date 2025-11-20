@@ -315,6 +315,8 @@ google:
   default_model: gemini-2.0-flash
   api_key: "${GOOGLE_API_KEY}"
   vertexai: false
+  rate_limit_requests: 15
+  rate_limit_period_seconds: 60
 ```
 
 Enable Vertex AI by toggling `vertexai` and providing project metadata:
@@ -325,7 +327,13 @@ google:
   project: "my-gcp-project"
   location: "us-central1"
   default_model: "gemini-1.5-flash"
+  rate_limit_requests: 30
+  rate_limit_period_seconds: 60
 ```
+
+Use `rate_limit_requests` together with `rate_limit_period_seconds` to throttle outbound Gemini
+requests (e.g., 30 calls per minute). This helps prevent `429 Too Many Requests` responses during
+agent workflows that rapidly chain multiple tool calls.
 
 ### Bedrock (generic) and Cohere
 

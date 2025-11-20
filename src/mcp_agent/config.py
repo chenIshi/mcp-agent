@@ -566,6 +566,27 @@ class GoogleSettings(BaseSettings, VertexAIMixin):
         ),
     )
 
+    rate_limit_requests: int | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "rate_limit_requests",
+            "GOOGLE_RATE_LIMIT_REQUESTS",
+            "GOOGLE_MAX_REQUESTS_PER_PERIOD",
+            "google__rate_limit_requests",
+        ),
+        description="Number of Gemini requests allowed within the configured rate limit period.",
+    )
+
+    rate_limit_period_seconds: float = Field(
+        default=60.0,
+        validation_alias=AliasChoices(
+            "rate_limit_period_seconds",
+            "GOOGLE_RATE_LIMIT_PERIOD_SECONDS",
+            "google__rate_limit_period_seconds",
+        ),
+        description="Length of the rate limiting window in seconds.",
+    )
+
     model_config = SettingsConfigDict(
         env_prefix="GOOGLE_",
         extra="allow",

@@ -1,5 +1,7 @@
-from typing import Type
+from typing import ClassVar, Type
 import base64
+import hashlib
+import threading
 
 from pydantic import BaseModel
 
@@ -24,6 +26,7 @@ from mcp.types import (
 )
 
 from mcp_agent.config import GoogleSettings
+from mcp_agent.utils.rate_limiter import AsyncRateLimiter
 from mcp_agent.executor.workflow_task import workflow_task
 from mcp_agent.logging.logger import get_logger
 
@@ -62,6 +65,9 @@ class GoogleAugmentedLLM(
     such as retrieval, tools, and memory provided from a collection of MCP servers.
     """
 
+    _RATE_LIMITERS: ClassVar[dict[str, AsyncRateLimiter]] = {}
+    _RATE_LIMITER_LOCK: ClassVar[threading.Lock] = threading.Lock()
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, type_converter=GoogleMCPTypeConverter, **kwargs)
 
@@ -90,6 +96,44 @@ class GoogleAugmentedLLM(
             max_iterations=10,
             use_history=True,
         )
+        self._rate_limiter = self._get_or_create_rate_limiter()
+
+    def _get_or_create_rate_limiter(self) -> AsyncRateLimiter | None:
+        """
+        Create a shared AsyncRateLimiter keyed by Google config parameters.
+        """
+        google_config = getattr(self.context.config, "google", None)
+        if (
+            not google_config
+            or not google_config.rate_limit_requests
+            or google_config.rate_limit_requests <= 0
+        ):
+            return None
+
+        period = (
+            google_config.rate_limit_period_seconds
+            if google_config.rate_limit_period_seconds and google_config.rate_limit_period_seconds > 0
+            else 60.0
+        )
+
+        api_key = google_config.api_key or "anonymous"
+        hashed_key = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+        limiter_key = f"{hashed_key}:{google_config.rate_limit_requests}:{period}:{google_config.vertexai}"
+
+        with self._RATE_LIMITER_LOCK:
+            limiter = self._RATE_LIMITERS.get(limiter_key)
+            if not limiter:
+                limiter = AsyncRateLimiter(
+                    max_calls=google_config.rate_limit_requests,
+                    period=period,
+                )
+                self._RATE_LIMITERS[limiter_key] = limiter
+
+        return limiter
+
+    async def _apply_rate_limit(self) -> None:
+        if self._rate_limiter:
+            await self._rate_limiter.acquire()
 
     @track_tokens()
     async def generate(self, message, request_params: RequestParams | None = None):
@@ -147,6 +191,8 @@ class GoogleAugmentedLLM(
 
             self.logger.debug("Completion request arguments:", data=arguments)
             self._log_chat_progress(chat_turn=(len(messages) + 1) // 2, model=model)
+
+            await self._apply_rate_limit()
 
             response: types.GenerateContentResponse = await self.executor.execute(
                 GoogleCompletionTasks.request_completion_task,
@@ -300,6 +346,8 @@ class GoogleAugmentedLLM(
             conversation.extend(messages)
         else:
             conversation.append(messages)
+
+        await self._apply_rate_limit()
 
         api_response: types.GenerateContentResponse = await self.executor.execute(
             GoogleCompletionTasks.request_completion_task,

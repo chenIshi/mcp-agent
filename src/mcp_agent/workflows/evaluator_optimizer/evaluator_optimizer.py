@@ -1,7 +1,7 @@
 import contextlib
 from enum import Enum
-from typing import Callable, List, Optional, Type, TYPE_CHECKING
-from pydantic import BaseModel, Field
+from typing import Callable, List, Optional, Type, TYPE_CHECKING, Union
+from pydantic import BaseModel, Field, field_validator
 
 from mcp_agent.tracing.semconv import GEN_AI_AGENT_NAME
 from mcp_agent.tracing.telemetry import get_tracer, record_attributes
@@ -44,6 +44,39 @@ class EvaluationResult(BaseModel):
     focus_areas: List[str] = Field(
         default_factory=list, description="Specific areas to focus on in next iteration"
     )
+
+    @field_validator("rating", mode="before")
+    @classmethod
+    def validate_rating(cls, v: Union[int, str, QualityRating]) -> QualityRating:
+        """
+        Validate and convert rating to QualityRating enum.
+        Accepts int (0-3), string name (POOR/FAIR/GOOD/EXCELLENT), or QualityRating enum.
+        """
+        if isinstance(v, QualityRating):
+            return v
+        
+        # Handle integer values (0, 1, 2, 3)
+        if isinstance(v, int):
+            try:
+                return QualityRating(v)
+            except ValueError:
+                raise ValueError(f"Invalid rating value: {v}. Must be 0-3 (POOR=0, FAIR=1, GOOD=2, EXCELLENT=3)")
+        
+        # Handle string values (case-insensitive)
+        if isinstance(v, str):
+            v_upper = v.upper().strip()
+            try:
+                return QualityRating[v_upper]
+            except KeyError:
+                # Try to parse as integer string
+                try:
+                    return QualityRating(int(v))
+                except (ValueError, KeyError):
+                    raise ValueError(
+                        f"Invalid rating: '{v}'. Must be one of: POOR (0), FAIR (1), GOOD (2), EXCELLENT (3)"
+                    )
+        
+        raise ValueError(f"Rating must be int, str, or QualityRating, got {type(v)}")
 
 
 class EvaluatorOptimizerLLM(AugmentedLLM[MessageParamT, MessageT]):

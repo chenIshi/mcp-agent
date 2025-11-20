@@ -413,6 +413,9 @@ Configure Google Gemini with different authentication methods:
       default_model: gemini-2.0-flash
       temperature: 0.7
       vertexai: false
+      # Optional throttling to avoid 429 errors
+      rate_limit_requests: 15           # Requests per window
+      rate_limit_period_seconds: 60     # Window length in seconds
     ```
 
     ```yaml Secrets File
@@ -423,6 +426,7 @@ Configure Google Gemini with different authentication methods:
 
     <Note>
       Use the Gemini Developer API with your API key. Set `vertexai: false` (default).
+      Configure `rate_limit_requests`/`rate_limit_period_seconds` if you routinely see 429s.
     </Note>
   </Tab>
 
