@@ -8,18 +8,16 @@ mcp:
   servers:
     # Fetch server for basic web retrieval
     fetch:
-      command: "uvx"
-      args: ["mcp-server-fetch"]
+      command: "/home/cheny0y/.local/bin/mcp-server-fetch"
     
     # Google Search MCP server
     g-search:
-      command: "npx"
-      args: ["-y", "g-search-mcp"]
+      command: "/home/cheny0y/.nvm/versions/node/v24.11.1/bin/g-search-mcp"
     
     # Filesystem server for writing reports
     filesystem:
-      command: "npx"
-      args: ["-y", "@modelcontextprotocol/server-filesystem"]
+      command: "/home/cheny0y/.nvm/versions/node/v24.11.1/bin/mcp-server-filesystem"
+      # args: ["-y", "@modelcontextprotocol/server-filesystem"]
 
 # Default OpenAI configuration
 # openai:
