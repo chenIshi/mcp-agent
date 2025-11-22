@@ -176,6 +176,8 @@ uv.lock
 prompt.md
 
 # example logs
+logs/
+examples/**/logs/
 examples/**/*.jsonl
 **/.DS_Store
 
