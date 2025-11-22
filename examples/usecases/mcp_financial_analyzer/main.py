@@ -29,8 +29,22 @@ from mcp_agent.workflows.evaluator_optimizer.evaluator_optimizer import (
 
 # Configuration values
 OUTPUT_DIR = "company_reports"
+TRACE_LOG_DIR = "logs"
 COMPANY_NAME = "Apple" if len(sys.argv) <= 1 else sys.argv[1]
-MAX_ITERATIONS = 3
+
+
+def _is_truthy(value: str | None, default: bool = True) -> bool:
+    """Return True unless an env var is an explicit falsey token."""
+    if value is None:
+        return default
+    return value.strip().lower() not in {"0", "false", "no", "off"}
+
+
+SANITY_MODE = _is_truthy(os.getenv("FINANCIAL_ANALYZER_SANITY_MODE"), default=True)
+NEWS_ITEMS_REQUIRED = 2 if SANITY_MODE else 5
+RESEARCH_MAX_REFINEMENTS = 1 if SANITY_MODE else 3
+RESEARCH_MIN_RATING = QualityRating.FAIR if SANITY_MODE else QualityRating.GOOD
+ORCHESTRATOR_MAX_ITERATIONS = 3 if SANITY_MODE else 8
 
 # Initialize app
 app = MCPApp(name="enhanced_stock_analyzer", human_input_callback=None)
@@ -39,6 +53,7 @@ app = MCPApp(name="enhanced_stock_analyzer", human_input_callback=None)
 async def main():
     # Create output directory and set up file paths
     os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(TRACE_LOG_DIR, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_file = f"{COMPANY_NAME.lower().replace(' ', '_')}_report_{timestamp}.md"
     output_path = os.path.join(OUTPUT_DIR, output_file)
@@ -64,13 +79,26 @@ async def main():
 
         # --- SPECIALIZED AGENT DEFINITIONS ---
 
+        scope_note = (
+            "This run is a QUICK sanity check. Gather just enough factual data to "
+            "prove the workflow works—prioritize accuracy over volume, stop once the "
+            "required fields are filled."
+            if SANITY_MODE
+            else "Collect the full data pack required for a comprehensive briefing."
+        )
+
+        news_scope = (
+            f"Provide {NEWS_ITEMS_REQUIRED} recent, well-sourced headlines."
+        )
+
         # Data collection agent that gathers comprehensive financial information
         research_agent = Agent(
             name="data_collector",
             instruction=f"""You are a comprehensive financial data collector for {COMPANY_NAME}.
-            
-            Your job is to gather ALL required financial information using Google Search and fetch tools.
-            
+            {scope_note}
+
+            Use Google Search + fetch to gather the requested facts in the order listed. Prefer the most recent data and stop once each section has concrete numbers.
+
             **REQUIRED DATA TO COLLECT:**
             
             1. **Current Market Data**:
@@ -86,7 +114,7 @@ async def main():
             3. **Recent Financial News**:
                Search: "{COMPANY_NAME} financial news latest week"
                Search: "{COMPANY_NAME} analyst ratings upgrade downgrade"
-               Extract: 3-5 recent headlines with dates, sources, and impact assessment
+               Extract: {news_scope}
             
             4. **Financial Metrics**:
                Search: "{COMPANY_NAME} PE ratio market cap financial metrics"
@@ -112,7 +140,7 @@ async def main():
             ## RECENT NEWS (Last 7 Days)
             1. [Headline] - [Date] - [Source] - [Impact: Positive/Negative/Neutral]
             2. [Headline] - [Date] - [Source] - [Impact: Positive/Negative/Neutral]
-            3. [Continue for 3-5 items]
+            3. [Continue until you reach the required number of items]
             
             ## KEY FINANCIAL METRICS
             - P/E Ratio: XX.X
@@ -131,9 +159,17 @@ async def main():
         # research_agent.attach_llm(GoogleAugmentedLLM)
 
         # Quality control agent that enforces strict data standards
+        evaluator_scope = (
+            "Since this is a sanity-check run, treat the output as GOOD if the essential "
+            "fields are present and sourced."
+            if SANITY_MODE
+            else "Hold the research to the full EXCELLENT standard."
+        )
+
         research_evaluator = Agent(
             name="data_evaluator",
             instruction=f"""You are a strict financial data quality evaluator for {COMPANY_NAME} research.
+            {evaluator_scope}
             
             **EVALUATION CRITERIA:**
             
@@ -204,15 +240,23 @@ async def main():
             optimizer=research_agent,
             evaluator=research_evaluator,
             llm_factory=GoogleAugmentedLLM,
-            min_rating=QualityRating.GOOD,
+            min_rating=RESEARCH_MIN_RATING,
+            max_refinements=RESEARCH_MAX_REFINEMENTS,
         )
 
         # Financial analysis agent that provides investment insights
+        analyst_scope = (
+            "Keep this analysis brief (2 short paragraphs max) and highlight only the "
+            "strongest bullish and bearish takeaways surfaced by the research."
+            if SANITY_MODE
+            else "Provide the full analysis outlined below."
+        )
+
         analyst_agent = Agent(
             name="financial_analyst",
             instruction=f"""You are a senior financial analyst providing investment analysis for {COMPANY_NAME}.
             
-            Based on the verified, high-quality data provided, create a comprehensive analysis:
+            Based on the verified, high-quality data provided, create a comprehensive analysis. {analyst_scope}
             
             **1. STOCK PERFORMANCE ANALYSIS**
             - Analyze current price movement and trading patterns
@@ -264,14 +308,44 @@ async def main():
         # analyst_agent.attach_llm(GoogleAugmentedLLM)
 
         # Report generation agent that creates institutional-quality documents
-        report_writer = Agent(
-            name="report_writer",
-            instruction=f"""Create a comprehensive, institutional-quality financial report for {COMPANY_NAME}.
+        report_date = datetime.now().strftime("%B %d, %Y at %I:%M %p EST")
+
+        if SANITY_MODE:
+            report_instruction = f"""Create a concise, sanity-check markdown snapshot for {COMPANY_NAME}.
+            
+            **GOAL:** Confirm that the workflow surfaced real data. Use numbered lists or short paragraphs—keep the entire document under 400 words.
+            
+            # {COMPANY_NAME} Quick Financial Snapshot
+            **Report Date:** {report_date}
+            **Mode:** Sanity Check
+            
+            ## Market Pulse
+            - Price + intraday change
+            - Volume vs average
+            - 52-week range position
+            
+            ## Earnings Pulse
+            - Latest EPS actual vs estimate (state beat/miss)
+            - Latest revenue actual vs estimate
+            - YOY growth callout
+            
+            ## Headlines to Watch
+            - Bullet the {NEWS_ITEMS_REQUIRED} news items with source + impact
+            
+            ## Key Metrics & Takeaways
+            - P/E, market cap, or other notable ratios
+            - 2 brief bullets on bullish/concern items
+            
+            Wrap up with a single-sentence overall assessment plus confidence level (High/Med/Low). 
+            Save the markdown to: {output_path}
+            """
+        else:
+            report_instruction = f"""Create a comprehensive, institutional-quality financial report for {COMPANY_NAME}.
             
             **REPORT STRUCTURE** (Use exactly this format):
             
             # {COMPANY_NAME} - Comprehensive Financial Analysis
-            **Report Date:** {datetime.now().strftime("%B %d, %Y at %I:%M %p EST")}
+            **Report Date:** {report_date}
             **Analyst:** AI Financial Research Team
             
             ## Executive Summary
@@ -382,58 +456,87 @@ async def main():
             - Save to file: {output_path}
             
             **CRITICAL:** Ensure all data comes directly from the verified research. Do not add speculative information not supported by the collected data.
-            """,
-            server_names=["filesystem"],
+            """
+
+        report_writer = Agent(
+            name="report_writer",
+            instruction=report_instruction,
+            server_names=[],
         )
         # report_writer.attach_llm(GoogleAugmentedLLM)
 
         # --- CREATE THE ORCHESTRATOR ---
-        logger.info(f"Initializing stock analysis workflow for {COMPANY_NAME}")
+        run_mode = "sanity-check mode" if SANITY_MODE else "full-report mode"
+        logger.info(
+            f"Initializing stock analysis workflow for {COMPANY_NAME} ({run_mode})"
+        )
 
         # Configure the orchestrator with our specialized agents
+        pipeline_agents = [research_quality_controller]
+        if not SANITY_MODE:
+            pipeline_agents.append(analyst_agent)
+        pipeline_agents.append(report_writer)
+
         orchestrator = Orchestrator(
             llm_factory=GoogleAugmentedLLM,
-            available_agents=[
-                research_quality_controller,
-                analyst_agent,
-                report_writer,
-            ],
-            plan_type="full",
+            available_agents=pipeline_agents,
+            plan_type="iterative" if SANITY_MODE else "full",
         )
 
         # Define the comprehensive analysis task
-        task = f"""Create a high-quality stock analysis report for {COMPANY_NAME} by following these steps:
+        if SANITY_MODE:
+            task = f"""Create a quick sanity-check stock snapshot for {COMPANY_NAME}:
 
-        1. Use the EvaluatorOptimizerLLM component (named 'research_quality_controller') to gather high-quality 
-           financial data about {COMPANY_NAME}. This component will automatically evaluate 
-           and improve the research until it reaches GOOD quality.
-           
-           Ask for:
-           - Current stock price and recent movement
-           - Latest quarterly earnings results and performance vs expectations
-           - Recent news and developments
-        
-        2. Use the financial_analyst to analyze this research data and identify key insights.
-        
-        3. Use the report_writer to create a comprehensive stock report and save it to:
-           "{output_path}"
-        
-        The final report should be professional, fact-based, and include all relevant financial information."""
+            1. Use 'research_quality_controller' once (with automatic evaluation) to gather:
+               - Today's stock price, change %, and volume vs average
+               - Latest EPS + revenue actual vs estimate
+               - {NEWS_ITEMS_REQUIRED} timely headlines with URLs
+               - Two valuation metrics (ex: P/E, market cap)
+
+            2. Pass the verified notes to 'report_writer' so it produces a concise markdown file at "{output_path}" following the quick snapshot template.
+
+            The goal is to produce trustworthy data with minimal latency—skip deep dives, but do include precise figures and citations."""
+        else:
+            task = f"""Create a high-quality stock analysis report for {COMPANY_NAME} by following these steps:
+
+            1. Use the EvaluatorOptimizerLLM component (named 'research_quality_controller') to gather high-quality 
+               financial data about {COMPANY_NAME}. This component will automatically evaluate 
+               and improve the research until it reaches GOOD quality.
+               
+               Ask for:
+               - Current stock price and recent movement
+               - Latest quarterly earnings results and performance vs expectations
+               - Recent news and developments
+            
+            2. Use the financial_analyst to analyze this research data and identify key insights.
+            
+            3. Use the report_writer to create a comprehensive stock report and save it to:
+               "{output_path}"
+            
+            The final report should be professional, fact-based, and include all relevant financial information."""
 
         # Execute the analysis workflow
         logger.info("Starting the stock analysis workflow")
         try:
-            await orchestrator.generate_str(
-                message=task, request_params=RequestParams(model="gemini-2.0-flash")
+            orchestrator_params = RequestParams(
+                model="gemini-2.0-flash",
+                maxTokens=2048 if SANITY_MODE else 4096,
+                max_iterations=ORCHESTRATOR_MAX_ITERATIONS,
+                temperature=0.4 if SANITY_MODE else 0.7,
+                use_history=False,
             )
 
-            # Verify report generation
-            if os.path.exists(output_path):
-                logger.info(f"Report successfully generated: {output_path}")
-                return True
-            else:
-                logger.error(f"Failed to create report at {output_path}")
-                return False
+            report_markdown = await orchestrator.generate_str(
+                message=task,
+                request_params=orchestrator_params,
+            )
+
+            # Persist report locally since filesystem tool is not used directly
+            with open(output_path, "w", encoding="utf-8") as report_file:
+                report_file.write(report_markdown)
+
+            logger.info(f"Report successfully generated: {output_path}")
+            return True
 
         except Exception as e:
             logger.error(f"Error during workflow execution: {str(e)}")

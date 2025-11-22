@@ -22,13 +22,23 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-class QualityRating(int, Enum):
+class QualityRating(str, Enum):
     """Enum for evaluation quality ratings"""
 
-    POOR = 0  # Major improvements needed
-    FAIR = 1  # Several improvements needed
-    GOOD = 2  # Minor improvements possible
-    EXCELLENT = 3  # No improvements needed
+    POOR = "POOR"  # Major improvements needed
+    FAIR = "FAIR"  # Several improvements needed
+    GOOD = "GOOD"  # Minor improvements possible
+    EXCELLENT = "EXCELLENT"  # No improvements needed
+
+    @property
+    def score(self) -> int:
+        """Numeric ordering used internally for comparisons."""
+        return {
+            QualityRating.POOR: 0,
+            QualityRating.FAIR: 1,
+            QualityRating.GOOD: 2,
+            QualityRating.EXCELLENT: 3,
+        }[self]
 
 
 class EvaluationResult(BaseModel):
@@ -54,14 +64,21 @@ class EvaluationResult(BaseModel):
         """
         if isinstance(v, QualityRating):
             return v
-        
+
         # Handle integer values (0, 1, 2, 3)
         if isinstance(v, int):
-            try:
-                return QualityRating(v)
-            except ValueError:
-                raise ValueError(f"Invalid rating value: {v}. Must be 0-3 (POOR=0, FAIR=1, GOOD=2, EXCELLENT=3)")
-        
+            mapping = {
+                0: QualityRating.POOR,
+                1: QualityRating.FAIR,
+                2: QualityRating.GOOD,
+                3: QualityRating.EXCELLENT,
+            }
+            if v in mapping:
+                return mapping[v]
+            raise ValueError(
+                f"Invalid rating value: {v}. Must be 0-3 (POOR=0, FAIR=1, GOOD=2, EXCELLENT=3)"
+            )
+
         # Handle string values (case-insensitive)
         if isinstance(v, str):
             v_upper = v.upper().strip()
@@ -70,12 +87,14 @@ class EvaluationResult(BaseModel):
             except KeyError:
                 # Try to parse as integer string
                 try:
-                    return QualityRating(int(v))
-                except (ValueError, KeyError):
+                    numeric_value = int(v_upper)
+                except ValueError as exc:
                     raise ValueError(
                         f"Invalid rating: '{v}'. Must be one of: POOR (0), FAIR (1), GOOD (2), EXCELLENT (3)"
-                    )
-        
+                    ) from exc
+
+                return cls.validate_rating(numeric_value)
+
         raise ValueError(f"Rating must be int, str, or QualityRating, got {type(v)}")
 
 
@@ -292,7 +311,7 @@ class EvaluatorOptimizerLLM(AugmentedLLM[MessageParamT, MessageT]):
                 logger.debug("Evaluator result:", data=evaluation_result)
 
                 # Track best response (using enum ordering)
-                if evaluation_result.rating.value > best_rating.value:
+                if evaluation_result.rating.score > best_rating.score:
                     best_rating = evaluation_result.rating
                     best_response = response
                     logger.debug(
@@ -309,23 +328,23 @@ class EvaluatorOptimizerLLM(AugmentedLLM[MessageParamT, MessageT]):
 
                 # Check if we've reached acceptable quality
                 if (
-                    evaluation_result.rating.value >= self.min_rating.value
+                    evaluation_result.rating.score >= self.min_rating.score
                     or not evaluation_result.needs_improvement
                 ):
                     logger.debug(
-                        f"Acceptable quality {evaluation_result.rating.value} reached",
+                        f"Acceptable quality {evaluation_result.rating.score} reached",
                         data={
-                            "rating": evaluation_result.rating.value,
+                            "rating": evaluation_result.rating.score,
                             "needs_improvement": evaluation_result.needs_improvement,
-                            "min_rating": self.min_rating.value,
+                            "min_rating": self.min_rating.score,
                         },
                     )
                     span.add_event(
                         "acceptable_quality_reached",
                         {
-                            "rating": evaluation_result.rating.value,
+                            "rating": evaluation_result.rating.score,
                             "needs_improvement": evaluation_result.needs_improvement,
-                            "min_rating": self.min_rating.value,
+                            "min_rating": self.min_rating.score,
                             "refinement": refinement_count,
                         },
                     )

@@ -96,3 +96,42 @@ Or run with a different company:
 ```bash
 uv run main.py "Microsoft"
 ```
+
+### Quick sanity mode vs full report
+
+The script now defaults to a fast "sanity check" mode that only collects enough data to verify the workflow and produce a short snapshot (handy for traces and demos). Set `FINANCIAL_ANALYZER_SANITY_MODE=0` if you want the prior full-length research workflow instead:
+
+```bash
+FINANCIAL_ANALYZER_SANITY_MODE=0 uv run main.py "Apple"
+```
+
+### OpenTelemetry tracing
+
+`mcp-agent` automatically instruments LLM calls, tool usage (fetch, g-search, filesystem), and workflow spans. This example enables OpenTelemetry in `mcp_agent.config.yaml`:
+
+```yaml
+otel:
+  enabled: true
+  service_name: "financial-analyzer"
+  exporters:
+    - file:
+        path_settings:
+          path_pattern: "logs/financial_analyzer_traces-{unique_id}.jsonl"
+          unique_id: "timestamp"
+          timestamp_format: "%Y%m%d_%H%M%S"
+```
+
+Each run now writes its own trace file (for example, `logs/financial_analyzer_traces-20251122_171628.jsonl`), so you can archive runs independently without manual cleanup. To send traces to a collector (Jaeger, Langfuse, Honeycomb, etc.), swap in an OTLP exporter:
+
+```yaml
+otel:
+  enabled: true
+  service_name: "financial-analyzer"
+  exporters:
+    - otlp:
+        endpoint: "https://otel.your-collector.example.com/v1/traces"
+        headers:
+          Authorization: "Bearer <token>"
+```
+
+Then run the example normally; the workflow emits spans for the orchestrator, evaluator/optimizer loop, every LLM completion, and each MCP tool call. You can adjust `otel.sample_rate` or add multiple exporters (e.g., console + file + otlp) if needed.

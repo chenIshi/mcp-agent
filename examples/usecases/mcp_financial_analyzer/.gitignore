@@ -1,0 +1,3 @@
+company_reports
+/*.json
+!logs/*.jsonl
